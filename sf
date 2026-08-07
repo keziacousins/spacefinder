@@ -1,0 +1,3 @@
+#!/bin/sh
+# Wrapper so you can run ./sf without activating the venv.
+exec "$(dirname "$0")/venv/bin/python" -m spacefinder "$@"
