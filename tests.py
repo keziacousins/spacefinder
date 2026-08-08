@@ -531,6 +531,20 @@ class TestBlockedCircuitBreaker(unittest.TestCase):
             released.set()
 
 
+class TestVersion(unittest.TestCase):
+    def test_version_is_semver(self):
+        import spacefinder
+        self.assertRegex(spacefinder.__version__, r"^\d+\.\d+\.\d+$")
+
+    def test_cli_reports_the_package_version(self):
+        """--version must not drift from __version__."""
+        import spacefinder
+        out = subprocess.run([sys.executable, "-m", "spacefinder", "--version"],
+                             capture_output=True, text=True)
+        self.assertEqual(out.stdout.strip(),
+                         f"spacefinder {spacefinder.__version__}")
+
+
 class TestRulesSafety(unittest.TestCase):
     def test_no_rule_destroys_docker_volumes(self):
         for r in rules_mod.load_rules():

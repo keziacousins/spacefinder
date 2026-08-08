@@ -7,7 +7,7 @@ import json
 import os
 import sys
 
-from . import clean, report, rules as rules_mod, sysinfo
+from . import __version__, clean, report, rules as rules_mod, sysinfo
 from .scan import Scanner
 
 
@@ -228,6 +228,8 @@ def build_parser():
     p = argparse.ArgumentParser(
         prog="spacefinder",
         description="Find and reclaim disk space on macOS.")
+    p.add_argument("--version", action="version",
+                   version=f"spacefinder {__version__}")
     p.add_argument("--threads", type=int)
     p.add_argument("--engine", choices=["bulk", "scandir"],
                    help="force an enumeration engine (default: auto)")

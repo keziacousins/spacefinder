@@ -284,6 +284,7 @@ move the item back yourself.
 --min-size MB           ignore a result below this size
 --json out.json         write the full results to a file. Mode 0600
 --all                   show every result, not the first 12
+--version               show the version and stop
 ```
 
 spacefinder always skips `/net` and `/home`, because these autofs paths stop if

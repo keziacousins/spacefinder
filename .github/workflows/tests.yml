@@ -3,6 +3,7 @@ name: tests
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -66,5 +67,26 @@ jobs:
               spacefinder/cli.py; then
             echo "::error file=spacefinder/cli.py::a rules file controls which" \
                  "files get moved; it must not come from the command line"
+            exit 1
+          fi
+
+  version-matches-tag:
+    # A tag that disagrees with __version__ ships a tool that misreports its
+    # own version, and the report is what a bug report quotes. Tag pushes only.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: The tag must equal spacefinder.__version__
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # Read the literal rather than import: the package is macOS-only.
+          code=$(python3 -c "import re, pathlib; \
+            print(re.search(r'__version__ = \"([^\"]+)\"', \
+            pathlib.Path('spacefinder/__init__.py').read_text()).group(1))")
+          echo "tag=$tag  __version__=$code"
+          if [ "$tag" != "$code" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match __version__ $code"
             exit 1
           fi
