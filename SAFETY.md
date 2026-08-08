@@ -120,5 +120,9 @@ installation can change which files the tool moves. Treat the file as code.
 
 ## Report a problem
 
-Open an issue on GitHub. If the problem lets spacefinder move or destroy a file
-that the rules do not name, please say so in the title.
+If the problem lets spacefinder move or destroy a file that the rules do not
+name, do not open a public issue. Use the private report function on GitHub:
+**Security → Report a vulnerability** on the repository page.
+
+For anything else, open an issue. [CONTRIBUTING.md](CONTRIBUTING.md) says what
+a change to this tool must not do.
