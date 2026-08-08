@@ -1,0 +1,70 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # macOS only, and not by preference: spacefinder calls getattrlistbulk(2),
+    # reads APFS container data through diskutil, and asks TCC what it can see.
+    # tests.py refuses to run on any other platform.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor. The code uses `X | None` annotations, which need
+        # `from __future__ import annotations` on 3.9, so a break here means
+        # someone added a runtime union.
+        python-version: ["3.9", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Byte-compile
+        run: python -m compileall -q spacefinder tests.py
+
+      - name: Run tests
+        run: python tests.py
+
+  no-dangerous-capability:
+    # SAFETY.md promises spacefinder cannot delete a file or run a shell
+    # command. tests.py asserts that too, but a test can be deleted alongside
+    # the code it guards. This job fails the build on the imports themselves.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The action path must not import subprocess or shutil
+        run: |
+          if grep -nE '^\s*(import|from)\s+(subprocess|shutil)\b' \
+              spacefinder/clean.py; then
+            echo "::error file=spacefinder/clean.py::clean.py must not import" \
+                 "subprocess or shutil; spacefinder only moves items to the Trash"
+            exit 1
+          fi
+
+      - name: No shell execution anywhere in the package
+        run: |
+          if grep -rnE 'shell\s*=\s*True|os\.system|os\.popen' spacefinder/; then
+            echo "::error::shell execution reintroduced; see SAFETY.md"
+            exit 1
+          fi
+
+      - name: The CLI must not accept an arbitrary rules file
+        run: |
+          if grep -nE '["'\'']--rules|--allow-commands' \
+              spacefinder/cli.py; then
+            echo "::error file=spacefinder/cli.py::a rules file controls which" \
+                 "files get moved; it must not come from the command line"
+            exit 1
+          fi
