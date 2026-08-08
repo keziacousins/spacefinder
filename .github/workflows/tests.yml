@@ -24,9 +24,9 @@ jobs:
         python-version: ["3.9", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -42,7 +42,7 @@ jobs:
     # the code it guards. This job fails the build on the imports themselves.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: The action path must not import subprocess or shutil
         run: |
