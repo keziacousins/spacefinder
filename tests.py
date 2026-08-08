@@ -14,7 +14,8 @@ import tempfile
 import time
 import unittest
 
-from spacefinder import fastwalk, rules as rules_mod
+from spacefinder import clean, fastwalk, report, rules as rules_mod
+from spacefinder import scan as scan_mod
 from spacefinder.fastwalk import DT_DIR, DT_FILE
 from spacefinder.scan import Scanner
 
@@ -296,6 +297,259 @@ class TestRulesFile(unittest.TestCase):
                 if a != b:
                     self.assertFalse(b.startswith(a.rstrip("/") + "/"),
                                      f"{b} nested inside {a}")
+
+
+class TestPathGuard(unittest.TestCase):
+    """A rules file drives deletion, so the action layer is the last line."""
+
+    def test_protected_locations_refused(self):
+        home = os.path.expanduser("~")
+        for p in ("/", home, f"{home}/Library", f"{home}/Documents",
+                  f"{home}/Downloads", "/private/var/folders"):
+            self.assertIsNotNone(clean.check_path(p), f"{p} was allowed")
+
+    def test_outside_allowed_roots_refused(self):
+        for p in ("/etc/passwd", "/System/Library", "/Applications/Safari.app"):
+            self.assertIsNotNone(clean.check_path(p), f"{p} was allowed")
+
+    def test_legitimate_targets_allowed(self):
+        home = os.path.expanduser("~")
+        for p in (f"{home}/Library/Caches/Homebrew", f"{home}/Downloads/x.dmg",
+                  "/private/var/folders/ab/cd/C/thing"):
+            self.assertIsNone(clean.check_path(p), f"{p} was refused")
+
+    def test_traversal_cannot_escape(self):
+        self.assertIsNotNone(
+            clean.check_path(os.path.expanduser("~/Library/../../../etc")))
+
+    def test_actions_enforce_the_guard(self):
+        # Even in dry-run: a refusal must be visible before --apply, not after.
+        out = clean.trash("/", dry_run=True)
+        self.assertFalse(out.ok, "trash accepted /")
+        self.assertIn("refused", out.detail)
+
+    def test_credentials_refused(self):
+        """Depth alone permitted these: they are named outright instead.
+
+        A rules file that reached ~/.ssh or the login keychain would move
+        credentials to the Trash at the default safety level.
+        """
+        home = os.path.expanduser("~")
+        for p in (f"{home}/.ssh", f"{home}/.ssh/id_ed25519",
+                  f"{home}/.aws/credentials", f"{home}/.gnupg/secring.gpg",
+                  f"{home}/Library/Keychains",
+                  f"{home}/Library/Keychains/login.keychain-db",
+                  f"{home}/.config/gh/hosts.yml",
+                  f"{home}/Library/Cookies/Cookies.binarycookies"):
+            self.assertIsNotNone(clean.check_path(p), f"{p} was allowed")
+
+    def test_hostile_rule_cannot_reach_credentials(self):
+        """End to end: the guard holds at the action, not just in isolation."""
+        r = rules_mod.Rule(id="hostile", title="hostile", safety="safe",
+                           action={"kind": "trash"})
+        f = rules_mod.Finding(
+            r, os.path.expanduser("~/Library/Keychains/login.keychain-db"), 1)
+        out = clean.apply_finding(f, dry_run=False)
+        self.assertFalse(out.ok)
+        self.assertIn("sensitive", out.detail)
+
+
+class TestNoCommandExecution(unittest.TestCase):
+    """spacefinder reports commands. It never runs them."""
+
+    def _finding(self, cmd):
+        r = rules_mod.Rule(id="t", title="t",
+                           action={"kind": "command", "command": cmd})
+        return rules_mod.Finding(r, "/tmp/whatever", 0)
+
+    def test_command_is_only_advice(self):
+        out = clean.apply_finding(self._finding("echo hi"), dry_run=False)
+        self.assertEqual(out.action, "advice")
+
+    def test_command_with_apply_does_not_execute(self):
+        marker = os.path.join(tempfile.mkdtemp(), "executed")
+        f = self._finding(f"touch {marker}")
+        clean.apply_finding(f, dry_run=False)
+        self.assertFalse(os.path.exists(marker),
+                         "a rule's shell command was executed")
+
+    def test_no_execution_machinery_remains(self):
+        # Guards against a well-meaning reintroduction.
+        for gone in ("run_command", "delete"):
+            self.assertFalse(hasattr(clean, gone),
+                             f"clean.{gone} is back")
+        self.assertNotIn("subprocess", dir(clean))
+
+
+class TestTrashLog(unittest.TestCase):
+    """The undo story is "move it back", which needs both paths recorded."""
+
+    def test_records_source_and_destination(self):
+        d = tempfile.mkdtemp()
+        log = clean.TrashLog(os.path.join(d, "log"))
+        log.record("/a/b", "/c/d")
+        written = log.flush()
+        self.assertIsNotNone(written)
+        with open(written) as fh:
+            line = fh.read().strip()
+        self.assertIn("/a/b", line)
+        self.assertIn("/c/d", line)
+
+    def test_written_private(self):
+        d = tempfile.mkdtemp()
+        log = clean.TrashLog(os.path.join(d, "log"))
+        log.record("/a/b", "/c/d")
+        written = log.flush()
+        self.assertEqual(os.stat(written).st_mode & 0o777, 0o600)
+
+
+class TestTerminalEscaping(unittest.TestCase):
+    """This report is read before someone decides to delete something."""
+
+    def test_control_characters_escaped(self):
+        hostile = "/tmp/a\x1b[2K\x1b[1Gnot-what-it-says"
+        out = report._shorten(hostile)
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\r", out)
+
+    def test_escaping_happens_before_truncation(self):
+        # Otherwise an escaped name can exceed the width it was measured at.
+        out = report._shorten("/tmp/" + "\x1b" * 60, width=40)
+        self.assertLessEqual(len(out), 40)
+
+    def test_safe_text_handles_all_c0_and_del(self):
+        raw = "".join(chr(c) for c in range(0x20)) + "\x7f"
+        self.assertNotIn("\x1b", report.safe_text(raw))
+        self.assertTrue(all(ord(c) >= 0x20 for c in report.safe_text(raw)))
+
+
+class TestRootSelection(unittest.TestCase):
+    """--fast must not quietly mean 'walk the whole home directory'."""
+
+    def test_fast_roots_do_not_collapse_to_home(self):
+        rs = rules_mod.load_rules()
+        home = os.path.realpath(os.path.expanduser("~"))
+        self.assertNotIn(home, rules_mod.fast_roots(rs))
+
+    def test_fast_roots_are_specific(self):
+        rs = rules_mod.load_rules()
+        self.assertGreater(len(rules_mod.fast_roots(rs)), 5)
+
+    def test_scan_roots_cover_name_based_rules(self):
+        rs = rules_mod.load_rules()
+        roots = rules_mod.scan_roots(rs)
+        home = os.path.realpath(os.path.expanduser("~"))
+        self.assertTrue(any(home == r or home.startswith(r.rstrip("/") + "/")
+                            for r in roots),
+                        "find.names rules would silently match nothing")
+
+    def test_deep_rules_are_named(self):
+        ids = {r.id for r in rules_mod.deep_rules(rules_mod.load_rules())}
+        self.assertIn("node-modules", ids)
+
+
+class TestUniqueDestination(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_never_returns_an_existing_path(self):
+        """shutil.move onto an existing dir nests instead of failing."""
+        base = os.path.join(self.tmp, "thing")
+        os.makedirs(base)
+        seen = set()
+        for _ in range(3):
+            dest = clean._unique(base)
+            self.assertFalse(os.path.lexists(dest), f"{dest} already exists")
+            self.assertNotIn(dest, seen)
+            seen.add(dest)
+            os.makedirs(dest)
+
+
+class TestTCCContainment(unittest.TestCase):
+    """Probing protected paths without FDA spends the host app's grant."""
+
+    def test_protected_paths_skipped_without_fda(self):
+        sc = Scanner(top_files=5, has_fda=False)
+        for p in scan_mod.TCC_PROTECTED:
+            self.assertIn(os.path.expanduser(p), sc.skip, p)
+
+    def test_protected_paths_walked_with_fda(self):
+        sc = Scanner(top_files=5, has_fda=True)
+        for p in scan_mod.TCC_PROTECTED:
+            self.assertNotIn(os.path.expanduser(p), sc.skip, p)
+
+    def test_unknown_fda_is_treated_as_absent(self):
+        # None means the probe could not tell. Erring towards walking would
+        # risk the grant; erring towards skipping only costs completeness.
+        sc = Scanner(top_files=5, has_fda=None)
+        self.assertIn(os.path.expanduser(scan_mod.TCC_PROTECTED[0]), sc.skip)
+
+    def test_skipped_paths_reported(self):
+        sc = Scanner(top_files=5, has_fda=False)
+        res = sc.scan([tempfile.mkdtemp()])
+        self.assertEqual(res.tcc_skipped, sc.tcc_skipped)
+
+
+class TestBlockedCircuitBreaker(unittest.TestCase):
+    """Dozens of blocked directories means systemic denial, not a bad mount."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.hangs = set()
+        for i in range(20):
+            d = os.path.join(self.tmp, f"hang{i}")
+            os.makedirs(d)
+            self.hangs.add(os.path.join(os.path.realpath(self.tmp), f"hang{i}"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_scan_aborts_instead_of_spawning_more_probes(self):
+        import threading
+        released = threading.Event()
+        sc = Scanner(threads=2, top_files=5, stall_timeout=0.2,
+                     blocked_cap=5, has_fda=True)
+        real = sc.listdir
+
+        def wedging_listdir(path):
+            if path in self.hangs:
+                released.wait(30)
+            return real(path)
+
+        sc.listdir = wedging_listdir
+        try:
+            res = sc.scan([self.tmp])
+            self.assertGreaterEqual(len(res.blocked), 5)
+            self.assertLess(len(res.blocked), len(self.hangs),
+                            "kept probing past the cap")
+            self.assertTrue(any("Full Disk Access" in e for e in res.errors),
+                            f"no explanation given: {res.errors}")
+        finally:
+            released.set()
+
+
+class TestRulesSafety(unittest.TestCase):
+    def test_no_rule_destroys_docker_volumes(self):
+        for r in rules_mod.load_rules():
+            cmd = r.action.get("command", "")
+            self.assertNotIn("--volumes", cmd,
+                             f"{r.id} would destroy named Docker volumes")
+
+    def test_commands_are_unique_across_rules(self):
+        # Two rules sharing a command means it runs twice in one clean.
+        cmds = [r.action["command"] for r in rules_mod.load_rules()
+                if r.action.get("kind") == "command"]
+        self.assertEqual(len(cmds), len(set(cmds)), "duplicate command")
+
+    def test_every_rule_can_actually_match(self):
+        # A rule with no paths and no find.names never produces a finding,
+        # so it silently advertises a capability that does not exist.
+        for r in rules_mod.load_rules():
+            self.assertTrue(r.paths or r.find_names,
+                            f"{r.id} can never match anything")
 
 
 if __name__ == "__main__":

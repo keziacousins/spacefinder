@@ -50,7 +50,7 @@ def print_overview(info):
     if info.snapshots:
         print(f"\n{_c('LOCAL SNAPSHOTS', BOLD)}  {len(info.snapshots)}")
         for s in info.snapshots[:8]:
-            print(f"  {s}")
+            print(f"  {safe_text(s)}")
         print(f"  {_c('These pin the blocks of deleted files.', YEL)}")
         print(f"  {DIM}Remove with: tmutil deletelocalsnapshots /{RESET}")
     else:
@@ -69,6 +69,10 @@ def print_scan(res, top=25, max_depth=None, show_files=20):
     if res.denied:
         print(f"  {_c(f'{len(res.denied)} directories unreadable', YEL)} "
               f"{DIM}- totals are low by that amount{RESET}")
+    if res.tcc_skipped:
+        print(f"  {_c(f'{len(res.tcc_skipped)} protected folders skipped', YEL)}"
+              f" {DIM}- need Full Disk Access; probing them without it costs "
+              f"a permission grant{RESET}")
     if res.blocked:
         print(f"  {_c(f'{len(res.blocked)} directories timed out', RED)} "
               f"{DIM}- stopped responding, skipped:{RESET}")
@@ -131,9 +135,13 @@ def print_accounting(res, info, has_fda: bool):
         print(f"  {'?':>10}  + APFS snapshots{snap_note} "
               f"{DIM}pin deleted blocks{RESET}")
 
+    if res.tcc_skipped:
+        print(f"  {'?':>10}  + {len(res.tcc_skipped)} folders behind Full "
+              f"Disk Access {DIM}(skipped, not probed){RESET}")
     if res.denied:
         print(f"  {'?':>10}  + {len(res.denied)} unreadable directories"
-              + (f" {_c('- no Full Disk Access', YEL)}" if not has_fda else ""))
+              + (f" {_c('- no Full Disk Access', YEL)}"
+                 if has_fda is False else ""))
 
     residual = info.used - scanned - unwalkable
     print(f"  {'-' * 10}")
@@ -141,7 +149,7 @@ def print_accounting(res, info, has_fda: bool):
     colour = RED if residual > 20 * 2**30 else YEL if residual > 5 * 2**30 else GRN
     print(f"  {_c(f'{human(residual):>10}', colour)}  unexplained")
 
-    if residual > 5 * 2**30 and not has_fda:
+    if residual > 5 * 2**30 and has_fda is not True:
         print(f"\n  {_c('Most of this is probably behind Full Disk Access.', YEL)}")
         print(f"  {DIM}System Settings > Privacy & Security > Full Disk "
               f"Access > add your terminal, then re-run.{RESET}")
@@ -177,12 +185,13 @@ def print_findings(findings, show_all=False):
         for f in shown:
             age = f" {DIM}{f.age_days:.0f}d old{RESET}" if f.mtime else ""
             print(f"    {human(f.size):>9}  {_shorten(f.path)}{age}")
-            print(f"               {DIM}[{f.rule.id}] {f.rule.why}{RESET}")
+            print(f"               {DIM}[{safe_text(f.rule.id)}] "
+                  f"{safe_text(f.rule.why)}{RESET}")
             act = f.rule.action
             if act.get("kind") == "command":
-                print(f"               {DIM}$ {act['command']}{RESET}")
+                print(f"               {DIM}$ {safe_text(act['command'])}{RESET}")
             if f.rule.note:
-                print(f"               {DIM}! {f.rule.note}{RESET}")
+                print(f"               {DIM}! {safe_text(f.rule.note)}{RESET}")
         if len(group) > len(shown):
             print(f"    {DIM}... {len(group)-len(shown)} more "
                   f"(--all to show){RESET}")
@@ -191,14 +200,31 @@ def print_findings(findings, show_all=False):
     print(f"\n  {_c('Safe to reclaim now: ' + human(safe_total), GRN)}")
 
 
+# ESC, CR and friends are legal in a macOS filename, and this report is what
+# someone reads before deciding to delete something.  Left raw, a downloaded
+# file called "\x1b[2K\x1b[1G..." can erase or rewrite the line describing it.
+# `ls` escapes control characters for exactly this reason; so do we.
+_CTRL = {c: f"\\x{c:02x}" for c in range(0x20)}
+_CTRL[0x7f] = "\\x7f"
+
+
+def safe_text(s: str) -> str:
+    """Render *s* inert for a terminal, whatever bytes it came from."""
+    return str(s).translate(_CTRL)
+
+
 def _shorten(path: str, width: int = 76) -> str:
     home = os.path.expanduser("~")
     if path.startswith(home):
         path = "~" + path[len(home):]
+    # Escape before measuring, so an escaped name cannot exceed the width.
+    path = safe_text(path)
     if len(path) <= width:
         return path
-    head, tail = path[:width // 3], path[-(width * 2 // 3):]
-    return f"{head}...{tail}"
+    # Budget the ellipsis too, so the result really fits in *width*.
+    head_n = (width - 3) // 3
+    tail_n = width - 3 - head_n
+    return f"{path[:head_n]}...{path[-tail_n:]}"
 
 
 def progress_printer():

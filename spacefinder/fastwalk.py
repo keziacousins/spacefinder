@@ -54,6 +54,17 @@ class Entry(NamedTuple):
 _libc_path = ctypes.util.find_library("c")
 _libc = ctypes.CDLL(_libc_path, use_errno=True) if _libc_path else None
 
+# Declared at import, beside the load, rather than as a side effect of
+# self_test(): bulk_listdir() is public, and calling it first left ctypes
+# guessing the ABI.  That works only for as long as every argument happens to
+# fit in a C int -- a silent dependency, and the wrong thing to hang a
+# 256 KB kernel write on.
+if _libc is not None and hasattr(_libc, "getattrlistbulk"):
+    _libc.getattrlistbulk.argtypes = [
+        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_size_t, ctypes.c_uint64]
+    _libc.getattrlistbulk.restype = ctypes.c_int
+
 O_DIRECTORY = 0x00100000        # <sys/fcntl.h>, macOS value
 O_NOFOLLOW = 0x00000100
 
@@ -267,11 +278,6 @@ def self_test(sample_dirs: list[str] | None = None) -> None:
     """Cross-check the bulk parser against os.lstat. Raises SelfTestError."""
     if _libc is None or not hasattr(_libc, "getattrlistbulk"):
         raise SelfTestError("getattrlistbulk unavailable in libc")
-
-    _libc.getattrlistbulk.argtypes = [
-        ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
-        ctypes.c_size_t, ctypes.c_uint64]
-    _libc.getattrlistbulk.restype = ctypes.c_int
 
     if sample_dirs is None:
         sample_dirs = [os.path.expanduser("~"), "/usr/lib", "/System/Library/CoreServices"]

@@ -88,16 +88,68 @@ def human(n: float) -> str:
     return f"{n:.1f} TB"
 
 
-def full_disk_access() -> bool:
-    """True if this process can read a TCC-protected location.
+# Tried in order. All are TCC-protected, but none is guaranteed to exist:
+# Mail and Messages are absent if never used.
+_TCC_PROBES = (
+    "~/Library/Application Support/com.apple.TCC",
+    "~/Library/Messages",
+    "~/Library/Mail",
+    "~/Library/Safari",
+)
+
+
+def full_disk_access() -> bool | None:
+    """True if a TCC-protected location is readable, False if denied, None if
+    we could not tell.
 
     Without Full Disk Access the scan silently misses Mail, Messages and
     several Library subtrees -- worth telling the user rather than reporting a
-    total that is quietly too small.
+    total that is quietly too small.  Absence is kept distinct from denial:
+    treating a missing probe as denial warned about Full Disk Access on
+    machines that already had it.
     """
-    probe = os.path.expanduser("~/Library/Application Support/com.apple.TCC")
-    try:
-        os.listdir(probe)
-        return True
-    except OSError:
-        return False
+    for probe in _TCC_PROBES:
+        try:
+            os.listdir(os.path.expanduser(probe))
+            return True
+        except PermissionError:
+            return False
+        except OSError:
+            continue        # not there; that tells us nothing either way
+    return None
+
+
+# Interpreter and helper bundles that are never what TCC holds responsible.
+_NOT_RESPONSIBLE = {"Python", "python3", "Electron", "ScriptEditor"}
+
+
+def responsible_app() -> str | None:
+    """The application macOS attributes this process's file access to.
+
+    TCC grants are recorded against the owning application, never against a
+    command run inside it.  Telling someone to "grant it to your terminal"
+    while they are running under an editor sends them to change a setting that
+    will not help -- so find the real one and name it.
+    """
+    # Take the *outermost* bundle, not the first one found walking up: a
+    # pyenv interpreter lives inside Python.app, so the nearest match is the
+    # interpreter rather than the application TCC actually holds responsible.
+    found = None
+    pid = os.getpid()
+    for _ in range(16):                     # bounded: process trees can loop
+        out = _run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], timeout=5)
+        parts = out.strip().split(None, 1)
+        if len(parts) < 2:
+            break
+        ppid, comm = parts
+        if ".app/Contents/MacOS/" in comm:
+            name = comm.split(".app/")[0].rsplit("/", 1)[-1]
+            if name not in _NOT_RESPONSIBLE:
+                found = name
+        try:
+            pid = int(ppid)
+        except ValueError:
+            break
+        if pid <= 1:
+            break
+    return found

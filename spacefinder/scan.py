@@ -41,6 +41,40 @@ CLOUD_ROOTS = [
     "~/OneDrive",
 ]
 
+# Locations behind TCC.  Without Full Disk Access these do not fail cleanly --
+# they block on a consent check, and macOS attributes each outstanding request
+# to whichever application launched the scan, not to spacefinder.  An
+# interactive terminal can sometimes surface that dialog, but a scan generates
+# far more requests than anyone will answer, and an editor-embedded shell or a
+# cron job cannot ask at all.  The recorded denials outlive the scan.
+#
+# So when we know we lack access these are skipped rather than probed.  There
+# is no version of walking them that succeeds without FDA: it either blocks or
+# spends someone else's permission grant.  The bytes are attributed in the
+# accounting section instead, which keeps the residual named.
+TCC_PROTECTED = [
+    "~/Library/Mail",
+    "~/Library/Messages",
+    "~/Library/Safari",
+    "~/Library/Cookies",
+    "~/Library/Calendars",
+    "~/Library/Reminders",
+    "~/Library/Accounts",
+    "~/Library/AddressBook",
+    "~/Library/HomeKit",
+    "~/Library/IdentityServices",
+    "~/Library/Metadata/CoreSpotlight",
+    "~/Library/Suggestions",
+    "~/Library/Trial",
+    "~/Library/Autosave Information",
+    "~/Library/Application Support/com.apple.TCC",
+    "~/Library/Application Support/AddressBook",
+    "~/Library/Application Support/CallHistoryDB",
+    "~/Library/Application Support/CallHistoryTransactions",
+    "~/Library/Containers/com.apple.mail",
+    "~/Library/Group Containers/group.com.apple.notes",
+]
+
 
 @dataclass
 class BigFile:
@@ -63,6 +97,7 @@ class ScanResult:
     dir_count: int = 0
     denied: list[str] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
+    tcc_skipped: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     dedup_saved: int = 0
     elapsed: float = 0.0
@@ -96,17 +131,25 @@ class ScanResult:
 class Scanner:
     def __init__(self, threads=None, engine=None, skip=None, top_files=40,
                  one_filesystem=True, progress=None, stall_timeout=15.0,
-                 include_cloud=False):
+                 include_cloud=False, has_fda=None, blocked_cap=32):
         self.engine_name, self.listdir = fastwalk.get_engine(engine)
         self.threads = threads or min(16, (os.cpu_count() or 4) * 2)
         self.skip = set(ALWAYS_SKIP) | {os.path.realpath(os.path.expanduser(p))
                                         for p in (skip or ())}
         if not include_cloud:
             self.skip |= {os.path.expanduser(p) for p in CLOUD_ROOTS}
+        self.tcc_skipped: list[str] = []
+        if has_fda is not True:
+            for p in TCC_PROTECTED:
+                p = os.path.expanduser(p)
+                self.skip.add(p)
+                if os.path.isdir(p):
+                    self.tcc_skipped.append(p)
         self.top_files_n = top_files
         self.one_filesystem = one_filesystem
         self.progress = progress
         self.stall_timeout = stall_timeout
+        self.blocked_cap = blocked_cap
 
         self._lock = threading.Lock()
         self._heap: list[tuple[int, str, int, float]] = []
@@ -121,7 +164,8 @@ class Scanner:
 
     def scan(self, roots: list[str]) -> ScanResult:
         started = time.monotonic()
-        res = ScanResult(engine=self.engine_name)
+        res = ScanResult(engine=self.engine_name,
+                         tcc_skipped=list(self.tcc_skipped))
         q: queue.LifoQueue = queue.LifoQueue()
 
         seeded: list[str] = []
@@ -195,6 +239,17 @@ class Scanner:
                     self._completed += 1      # the wedged thread will not
                     res.blocked.append(path)  # count it; see _worker
                 live = len(threads) - len(self._wedged)
+                # Circuit breaker.  One blocking directory is a bad mount;
+                # dozens means something systemic -- almost always a consent
+                # check nobody is answering.  Spawning replacements into that
+                # generates more outstanding requests, and macOS records them
+                # against the application that launched us.  Stop instead.
+                if len(res.blocked) >= self.blocked_cap:
+                    res.errors.append(
+                        f"stopped after {len(res.blocked)} directories blocked "
+                        f"-- looks like missing Full Disk Access rather than "
+                        f"one unresponsive mount")
+                    return
 
             # Replace wedged threads so the queue keeps draining.  Counting
             # live workers (rather than total spawned) means a volume with

@@ -1,3 +1,15 @@
 #!/bin/sh
-# Wrapper so you can run ./sf without activating the venv.
-exec "$(dirname "$0")/venv/bin/python" -m spacefinder "$@"
+# Run spacefinder without activating a virtualenv.
+#
+# Prefers the repo venv when one exists, but does not need it: spacefinder is
+# stdlib-only, so a bare python3 works. The venv is gitignored, so requiring it
+# left this script broken on a fresh clone.
+set -e
+dir="$(cd "$(dirname "$0")" && pwd)"
+PYTHONPATH="$dir${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+
+if [ -x "$dir/venv/bin/python" ]; then
+    exec "$dir/venv/bin/python" -m spacefinder "$@"
+fi
+exec python3 -m spacefinder "$@"

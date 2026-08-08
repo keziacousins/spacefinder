@@ -14,12 +14,12 @@
         "kind": "dir",
         "min_size_mb": 100
       },
-      "safety": "caution",
+      "safety": "manual",
       "action": {
         "kind": "command",
-        "command": "rm -rf ~/.Trash/*"
+        "command": "find ~/.Trash -mindepth 1 -delete"
       },
-      "note": "Check the contents first; this is the last stop before the bytes are gone."
+      "note": "Permanent, unlike every other reclaim at 'caution' -- which is why this sits at 'manual'. The old 'rm -rf ~/.Trash/*' also skipped dotfiles, so it under-deleted silently. Check the contents first; this is the last stop before the bytes are gone."
     },
     {
       "id": "xcode-derived-data",
@@ -335,9 +335,9 @@
       "safety": "caution",
       "action": {
         "kind": "command",
-        "command": "docker system prune -a --volumes"
+        "command": "docker system prune -a"
       },
-      "note": "Deleting the .raw destroys all images and volumes. Prune first; the file only shrinks after Docker Desktop reclaims space (Settings > Resources > Disk image size)."
+      "note": "Named volumes are deliberately left alone: they hold database contents and other state that nothing regenerates. Remove them yourself with 'docker volume prune' once you have checked what is in them. Deleting the .raw file destroys images and volumes alike. The file only shrinks after Docker Desktop reclaims space (Settings > Resources > Disk image size)."
     },
     {
       "id": "orbstack-data",
@@ -351,11 +351,11 @@
         "kind": "dir",
         "min_size_mb": 1000
       },
-      "safety": "caution",
+      "safety": "manual",
       "action": {
-        "kind": "command",
-        "command": "docker system prune -a --volumes"
-      }
+        "kind": "manual"
+      },
+      "note": "Reclaim depends on which runtime owns the data. With OrbStack as the active docker context, 'docker system prune -a' applies; otherwise use 'orb delete <machine>'. Left manual so it cannot prune whichever context happens to be active."
     },
     {
       "id": "vscode-caches",
@@ -447,8 +447,7 @@
       "category": "cache",
       "why": "DARWIN_USER_CACHE_DIR: app update stagings, Chrome framework copies, temp files. Cleared on reboot in part, but large items persist.",
       "paths": [
-        "/private/var/folders/*/*/C/*",
-        "/private/var/folders/*/*/T/*"
+        "/private/var/folders/*/*/C/*"
       ],
       "match": {
         "kind": "dir",
@@ -459,7 +458,7 @@
       "action": {
         "kind": "trash"
       },
-      "note": "Quit the owning app first; some entries are live temp files.",
+      "note": "Quit the owning app first: these belong to running processes, and moving one out from under its owner can crash it. The sibling T/ (TemporaryItems) directory is deliberately not matched -- those are live temp files of running processes, and taking them is how you corrupt an in-progress save.",
       "generic": true
     },
     {
@@ -722,7 +721,8 @@
       "safety": "caution",
       "action": {
         "kind": "trash"
-      }
+      },
+      "note": "Reaches into ~/Desktop and ~/Documents, not just ~/Downloads, so it can match a file you filed deliberately. Reversible -- it goes to the Trash -- but read the list before applying."
     },
     {
       "id": "ipsw",
@@ -842,22 +842,6 @@
         "kind": "manual"
       },
       "note": "Check which ones are referenced by .python-version / .nvmrc files before removing."
-    },
-    {
-      "id": "time-machine-snapshots",
-      "title": "APFS local snapshots",
-      "category": "system",
-      "why": "Time Machine keeps local snapshots that pin the blocks of deleted files. This is the usual reason deleting files frees nothing.",
-      "paths": [],
-      "match": {
-        "kind": "dir"
-      },
-      "safety": "caution",
-      "action": {
-        "kind": "command",
-        "command": "tmutil deletelocalsnapshots /"
-      },
-      "note": "Reported by 'spacefinder overview', not by the file scan -- snapshots are invisible to a directory walk."
     }
   ]
 }

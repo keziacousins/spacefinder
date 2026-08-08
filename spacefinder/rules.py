@@ -58,21 +58,30 @@ class Rule:
             note=d.get("note", ""),
         )
 
-    def roots(self) -> list[str]:
-        """Directories worth scanning to evaluate this rule (for --fast)."""
-        out = []
-        for p in self.paths + self.find_under:
-            p = os.path.expanduser(p)
-            # Trim at the first glob component: we need the containing dir.
-            parts = []
-            for seg in p.split("/"):
-                if any(ch in seg for ch in "*?["):
-                    break
-                parts.append(seg)
-            root = "/".join(parts) or "/"
-            if os.path.isdir(root):
-                out.append(root)
-        return out
+    @staticmethod
+    def _trim(p: str) -> str:
+        """The containing directory of a glob pattern."""
+        p = os.path.expanduser(p)
+        parts = []
+        for seg in p.split("/"):
+            if any(ch in seg for ch in "*?["):
+                break
+            parts.append(seg)
+        return "/".join(parts) or "/"
+
+    def path_roots(self) -> list[str]:
+        """Directories holding this rule's explicit `paths` globs.
+
+        Bounded and cheap: each is a named location a few levels deep.
+        """
+        return [r for r in map(self._trim, self.paths) if os.path.isdir(r)]
+
+    def find_roots(self) -> list[str]:
+        """Directories that must be walked in full to answer `find.names`.
+
+        Unbounded: finding every node_modules under ~ means walking ~.
+        """
+        return [r for r in map(self._trim, self.find_under) if os.path.isdir(r)]
 
 
 @dataclass
@@ -215,15 +224,38 @@ def _iglob(pattern: str, res, kind: str):
     return [pattern] if os.path.exists(pattern) else []
 
 
-def fast_roots(rules: list[Rule]) -> list[str]:
-    """Deduped, non-overlapping roots covering every rule."""
-    roots: list[str] = []
-    for r in rules:
-        roots.extend(r.roots())
-    roots = sorted(set(os.path.realpath(r) for r in roots))
+def _dedupe(roots) -> list[str]:
+    """Deduped, non-overlapping, shallowest-wins."""
     out: list[str] = []
-    for r in roots:
+    for r in sorted(set(os.path.realpath(r) for r in roots)):
         if any(r == o or r.startswith(o.rstrip("/") + "/") for o in out):
             continue
         out.append(r)
     return out
+
+
+def fast_roots(rules: list[Rule]) -> list[str]:
+    """The cheap, explicitly-named hot spots.
+
+    Only rules that name `paths` are covered.  A `find.names` rule -- every
+    node_modules under ~ -- has no hot spot to visit: answering it means
+    walking the whole subtree.  Folding its `find.under` root in here is what
+    used to make --fast expand to a full home-directory walk while still
+    reporting "known hot spots", so the two root sets are now kept apart.
+    """
+    return _dedupe(r for rule in rules for r in rule.path_roots())
+
+
+def scan_roots(rules: list[Rule]) -> list[str]:
+    """Everything that must be walked to evaluate *rules* correctly.
+
+    Use this wherever a wrong answer matters more than the wait -- notably
+    `clean`, where a missed root means a rule silently finds nothing.
+    """
+    return _dedupe([r for rule in rules for r in rule.path_roots()]
+                   + [r for rule in rules for r in rule.find_roots()])
+
+
+def deep_rules(rules: list[Rule]) -> list[Rule]:
+    """Rules that :func:`fast_roots` cannot answer."""
+    return [r for r in rules if r.find_names]
