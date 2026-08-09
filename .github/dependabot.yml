@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # There is no pip entry here on purpose: spacefinder imports stdlib only, so
+  # there is no manifest to watch. The actions below are the entire dependency
+  # surface of this repository.
+  #
+  # Every `uses:` in .github/workflows is pinned to a commit SHA, which means a
+  # security fix upstream reaches us only when someone rewrites the pin by hand.
+  # Dependabot is what keeps the pins from quietly rotting; it rewrites the SHA
+  # and the trailing version comment together.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

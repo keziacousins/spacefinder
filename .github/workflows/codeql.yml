@@ -1,0 +1,39 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # New queries ship faster than this code changes. A weekly run re-analyses an
+  # untouched tree against the current query pack, which is the only way a
+  # finding published after the last commit ever surfaces.
+  schedule:
+    - cron: "23 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    # Analysis only; the macOS-only runtime paths in spacefinder are never
+    # executed here. CodeQL extracts Python without building it.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The repository default is read-only, so uploading the SARIF result
+      # needs this granted back at the job level.
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        with:
+          languages: python
+          # The no-dangerous-capability job greps for the specific imports
+          # SAFETY.md rules out. It cannot see the same capability arriving via
+          # importlib, getattr, or a module it does not name. security-extended
+          # is the part that reasons about reachability rather than spelling.
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
