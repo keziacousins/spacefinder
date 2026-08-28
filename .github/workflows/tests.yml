@@ -37,6 +37,20 @@ jobs:
       - name: Run tests
         run: python tests.py
 
+  writing-standard:
+    # GLOSSARY.md is the controlled vocabulary for the documentation, and
+    # tools/vocab-check/check.py enforces the part of it that a check can
+    # reach. Linux: the checker reads Markdown and knows nothing about APFS.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: The checker must work before its result means anything
+        run: python3 tools/vocab-check/check.py --self-test
+
+      - name: The documentation must follow GLOSSARY.md
+        run: python3 tools/vocab-check/check.py
+
   no-dangerous-capability:
     # SAFETY.md promises spacefinder cannot delete a file or run a shell
     # command. tests.py asserts that too, but a test can be deleted alongside

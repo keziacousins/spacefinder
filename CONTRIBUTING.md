@@ -29,8 +29,11 @@ and fails the build.
   change, and passes after it, is the best kind.
 - Keep the code in the Python standard library. spacefinder has no
   dependencies, and that is deliberate.
-- Write documentation in ASD-STE100 (Simplified Technical English), like the
-  rest of the documentation here.
+- Write documentation to [GLOSSARY.md](GLOSSARY.md). It defines the words this
+  project uses, and it follows the spirit of ASD-STE100 (Simplified Technical
+  English). `python3 tools/vocab-check/check.py` checks the mechanical part.
+  The rule that matters most, one term with one meaning, is the one no check
+  can reach.
 
 ## What happens to your pull request
 
