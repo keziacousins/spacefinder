@@ -5,8 +5,8 @@
   "maxWordsPerSentence": 30,
   "maxSentencesPerParagraph": 6,
 
-  "expectDocs": ["GLOSSARY.md"],
-  "notYetConverted": ["README.md", "SAFETY.md", "CONTRIBUTING.md"],
+  "expectDocs": ["CONTRIBUTING.md", "GLOSSARY.md"],
+  "notYetConverted": ["README.md", "SAFETY.md"],
 
   "sentenceStarts": ["spacefinder"],
 

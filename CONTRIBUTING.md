@@ -8,16 +8,16 @@ project refuses some changes that other projects accept.
 [SAFETY.md](SAFETY.md) records what spacefinder can do to your files. It moves
 an item to the Trash. That is the complete list.
 
-A pull request that adds any of these will be closed:
+A maintainer closes a pull request that adds any of these:
 
 - code that deletes a file
 - code that runs a shell command, in any form
 - a command-line option that reads a rules file from a path
 
-These limits are the reason the tool is safe to run. They replace a list of
-forbidden paths, because no such list is complete. The review that produced
-SAFETY.md wrote a rules file that reached `~/Library/Keychains` and `~/.ssh`
-while it passed every guard.
+These limits are the reason the tool cannot damage your files. They replace a
+list of forbidden paths, because no such list is complete. The review that
+produced SAFETY.md wrote a rules file that reached `~/Library/Keychains` and
+`~/.ssh` while it passed every guard.
 
 CI enforces these limits. The `no-dangerous-capability` job reads the source
 and fails the build.
@@ -39,19 +39,19 @@ and fails the build.
 
 Workflows do not start automatically for a pull request from a fork. A
 maintainer approves the run first. This is not a comment on you. A pull request
-can change the test file, and the test file runs on a machine, so somebody
-looks at the change before it runs.
+can change the test file, and the test file runs on a machine, so a maintainer
+reads the change before it runs.
 
 ## A new rule
 
 A new rule in `rules.json` is the easiest useful contribution. A rule needs:
 
-- a `why` field that says what the files are, and what makes them safe to
-  remove
+- a `why` field that says what the files are, and why you can remove them
+  without loss
 - the correct `safety` level. Use `safe` only when the system makes the data
   again without help
-- an `action` of `trash` for files, or `command` for a command that the user
-  runs
+- an `action` of `trash` for files, or `command` for a shell command that you
+  run yourself
 
 Treat `rules.json` as code. It decides which files the tool moves.
 
