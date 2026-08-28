@@ -30,6 +30,11 @@ import re
 import sys
 from glob import glob
 
+# The vendored copy carries this so `vendor.py` can tell an old copy from one
+# the consumer has edited. Bump it whenever this file changes, and record the
+# new hash with `tools/vendor.py record` — a test fails if you forget.
+__version__ = "1.0.0"
+
 # --- the prose pipeline -----------------------------------------------------
 #
 # Markdown reduced to the prose a reader reads, as paragraphs. Code, tables,
@@ -430,6 +435,7 @@ def main(argv=None):
     parser.add_argument("--root", default=None)
     parser.add_argument("--stats", action="store_true")
     parser.add_argument("--self-test", dest="self_test", action="store_true")
+    parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
     if args.self_test:
