@@ -1,0 +1,28 @@
+{
+  "docs": ["README.md", "SAFETY.md", "CONTRIBUTING.md", "GLOSSARY.md"],
+  "glossary": "GLOSSARY.md",
+
+  "maxWordsPerSentence": 30,
+  "maxSentencesPerParagraph": 6,
+
+  "expectDocs": ["CONTRIBUTING.md", "GLOSSARY.md", "README.md", "SAFETY.md"],
+  "notYetConverted": [],
+
+  "sentenceStarts": ["spacefinder"],
+
+  "denySection": "Words we do not use",
+  "denied": [
+    { "term": "just", "pattern": "\\bjust\\b", "instead": "delete it — it tells the reader their difficulty is their own fault" },
+    { "term": "simply", "pattern": "\\bsimply\\b", "instead": "delete it" },
+    { "term": "obviously", "pattern": "\\bobviously\\b", "instead": "delete it" },
+    { "term": "of course", "pattern": "\\bof course\\b", "instead": "delete it" },
+    { "term": "stop", "pattern": "\\bstops?\\b|\\bstopped\\b|\\bstopping\\b", "instead": "write \"block\", \"replace\", \"abandon\" or \"exit\" — say which" },
+    { "term": "hang", "pattern": "\\bhangs?\\b|\\bhung\\b|\\bhanging\\b", "instead": "write \"blocked\"" },
+    { "term": "stall", "pattern": "\\bstalls?\\b|\\bstalled\\b|\\bstalling\\b", "instead": "write \"blocked\"" },
+    { "term": "wedge", "pattern": "\\bwedges?\\b|\\bwedged\\b", "instead": "write \"blocked\"" },
+    { "term": "stuck", "pattern": "\\bstuck\\b", "instead": "write \"blocked\"" },
+    { "term": "unresponsive", "pattern": "\\bunresponsive\\b", "instead": "write \"blocked\"" },
+    { "term": "probe", "pattern": "\\bprobes?\\b|\\bprobed\\b|\\bprobing\\b", "instead": "write \"examine\"" },
+    { "term": "hit", "pattern": "\\bhits?\\b", "instead": "write \"match\"" }
+  ]
+}

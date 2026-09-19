@@ -591,6 +591,33 @@ class TestRulesSafety(unittest.TestCase):
             shutil.rmtree(home)
 
 
+class TestWritingStandard(unittest.TestCase):
+    """GLOSSARY.md is the writing standard. This runs its checker.
+
+    The checker is vendored at tools/vocab-check/check.py and uses the standard
+    library only, so a fresh clone can run it. CI runs it again on Linux,
+    because this file refuses to run anywhere except macOS.
+    """
+
+    CHECKER = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "tools", "vocab-check", "check.py")
+
+    def _run(self, *args):
+        return subprocess.run([sys.executable, self.CHECKER, *args],
+                              capture_output=True, text=True)
+
+    def test_the_checker_works(self):
+        # A checker that reports nothing because it is broken looks exactly
+        # like a repository with nothing wrong in it.
+        r = self._run("--self-test")
+        self.assertIn("passed", r.stdout + r.stderr)
+        self.assertEqual(r.returncode, 0)
+
+    def test_the_writing_standard_holds(self):
+        r = self._run()
+        self.assertEqual(r.returncode, 0, "\n" + r.stdout + r.stderr)
+
+
 if __name__ == "__main__":
     if sys.platform != "darwin":
         print("macOS only")

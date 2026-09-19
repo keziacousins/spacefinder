@@ -39,8 +39,8 @@ The strongest answer to a risk is the absence of the feature.
 
 ## Closed: guarded
 
-- [x] **Movement outside a known area.** A target must resolve inside `~` or
-      `/private/var/folders`. It must sit at least two levels below that root.
+- [x] **Movement outside a known area.** An item must resolve inside `~` or
+      `/private/var/folders`, at a depth of at least two below that root.
 - [x] **Movement of a protected folder.** spacefinder refuses `/`, your home
       directory, and the standard folders inside it.
 - [x] **Movement of credentials.** spacefinder refuses `~/.ssh`, `~/.gnupg`,
@@ -58,7 +58,7 @@ The strongest answer to a risk is the absence of the feature.
       volume that holds the item, and refuses a move across volumes.
 - [x] **A destination that exists.** A rename onto an existing directory moves
       the item inside it. spacefinder finds a free name first, and it checks
-      each candidate.
+      each candidate name.
 
 ## Closed: output you can trust
 
@@ -77,14 +77,18 @@ The strongest answer to a risk is the absence of the feature.
 ## Closed: damage to your system
 
 - [x] **A permission storm.** Without Full Disk Access, a protected directory
-      does not refuse access. The system call stops and waits for an answer.
-      spacefinder answered a stopped directory with a new worker thread, and
-      one scan could leave approximately 128 threads in outstanding requests.
-      macOS records these against the application that started the scan. During
-      this review, that behaviour cost the host editor its Documents
-      permission. spacefinder now does three things. It skips the protected
-      folders when the permission is absent. It stops the scan if many
-      directories stop. It names the correct application in its warning.
+      does not refuse access. The system call blocks and waits for an answer.
+      spacefinder answered a blocked directory with a new worker. One scan
+      could therefore leave approximately 128 threads in outstanding requests,
+      and macOS records these against the application that started the scan.
+      During this review, that behaviour cost the host editor its Documents
+      permission.
+
+spacefinder now does three things:
+
+- It skips the protected folders when the permission is absent.
+- It abandons the scan if many directories block.
+- It names the correct application in its warning.
 
 ## Accepted limits
 
@@ -112,8 +116,9 @@ moves.
 **The free-space figure covers the boot volume only.** A move on another volume
 does not appear in it.
 
-**A hard link needs every link removed.** If a file has more than one link, a
-move of one link returns no space. The size in the report does not show this.
+**A hard link keeps its bytes until you remove every link.** If a file has
+more than one link, a move of one link returns no space. The number in the
+report does not show this.
 
 **`rules.json` is part of the program.** Anybody who can write to the
 installation can change which files the tool moves. Treat the file as code.

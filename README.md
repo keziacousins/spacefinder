@@ -39,11 +39,12 @@ To give the permission, do these steps:
 
 Without the permission, spacefinder does not examine the protected folders.
 This behaviour is deliberate. A protected folder does not refuse access
-immediately. The system call stops and waits for an answer to a permission
-question. One scan can make many of these requests. macOS can record the
-requests as refusals. The application then loses a permission that it had
-before. spacefinder therefore skips these folders and shows you how many it
-skipped.
+immediately. The system call blocks and waits for an answer to a permission
+question.
+
+One scan can make many of these requests. macOS can record the requests as
+refusals. The application then loses a permission that it had before.
+spacefinder therefore skips these folders and shows you how many it skipped.
 
 ## Speed
 
@@ -69,7 +70,7 @@ metadata is not in the cache. That scan takes approximately 46 seconds.
 
 The bulk method decodes a packed C structure. Code of this type can fail and
 give sizes that look correct but are wrong. spacefinder therefore compares its
-result with `os.lstat` at start. If the two results disagree, spacefinder uses
+own numbers with `os.lstat` at start. If the two disagree, spacefinder uses
 `os.scandir` instead. To select an engine yourself, use `--engine bulk` or
 `--engine scandir`.
 
@@ -85,7 +86,7 @@ did not evaluate.
 
 `--fast` is not much quicker than a scan of your home directory. The named
 directories hold most of the files in the home directory. Use `--fast` when you
-want the rule results without a scan of the full disk.
+want the rule matches without a scan of the full disk.
 
 ## What spacefinder measures
 
@@ -135,17 +136,17 @@ A large difference usually has one of these three causes:
 spacefinder always shows this difference. A total that is short by tens of
 gigabytes, with no explanation, is worse than a total with a known gap.
 
-## Directories that stop
+## Directories that block
 
 Some directories do not fail immediately. Without Full Disk Access, many paths
 return `EPERM` at once, and spacefinder counts them as unreadable. But a
 permission question with no answer, or a File Provider mount that does not
-respond, can stop the system call for an unlimited time. No dialog appears. The
+respond, can block the system call for an unlimited time. No dialog appears. The
 thread cannot be cancelled.
 
 spacefinder therefore monitors its own worker threads. If a directory does not
-respond within the `--stall-timeout` period, spacefinder stops that worker,
-shows the path, and starts a new worker. The queue then continues.
+respond within the `--stall-timeout` period, spacefinder replaces that worker
+and shows you the path. The queue then continues.
 
 ```
   3 directories timed out - stopped responding, skipped:
@@ -155,19 +156,21 @@ shows the path, and starts a new worker. The queue then continues.
 spacefinder counts the workers that are alive, not the workers that it started.
 A volume with many blocked directories therefore completes.
 
-If many directories stop, the cause is usually a missing permission and not one
-bad mount. spacefinder then stops the scan and tells you. More requests in this
-condition can remove a permission from your terminal or your editor.
+If many directories block, the cause is usually a missing permission and not
+one bad mount. spacefinder then abandons the scan and tells you. More requests
+in this condition can remove a permission from your terminal or your editor.
 
-The worker threads are daemon threads. A thread that never returns cannot stop
-the program from exiting.
+The worker threads are daemon threads. A thread that never returns cannot
+prevent the program from exiting.
 
 spacefinder does not examine the cloud storage folders by default. These
 folders are `~/Library/CloudStorage`, `~/Library/Mobile Documents`,
-`~/Dropbox` and `~/OneDrive`. Two problems can occur. A read can stop while it
-waits for a sync program. A read can also make macOS download a file that was
-only a placeholder. The download uses disk space instead of measuring it. To
-examine these folders, use `--include-cloud`.
+`~/Dropbox` and `~/OneDrive`.
+
+Two problems can occur. A read can block while it waits for a sync program. A
+read can also make macOS download a file that was only a placeholder. The
+download uses disk space instead of measuring it. To examine these folders, use
+`--include-cloud`.
 
 ## rules.json
 
@@ -195,7 +198,7 @@ A rule tells spacefinder where to look, what to match, and what to do:
 | `match` | `kind` (dir or file), `min_size_mb`, `older_than_days`, `name_glob` |
 | `safety` | `safe`, `caution` or `manual` |
 | `action` | `trash`, `command` or `manual`. See "What spacefinder does to your files" |
-| `generic` | a general rule. A specific rule for the same path wins |
+| `generic` | marks the rule as generic. A specific rule for the same path wins |
 | `regenerates` | the tests check this field for every `safe` rule |
 
 The three safety levels have these meanings:
@@ -207,9 +210,9 @@ The three safety levels have these meanings:
   rules.
 
 Rules can match the same path. For example, `~/Library/Caches/Homebrew` matches
-the specific `homebrew-cache` rule and the general `user-caches` rule.
+the specific `homebrew-cache` rule and the generic `user-caches` rule.
 spacefinder resolves these overlaps before it calculates the total. A specific
-rule wins against a general rule. spacefinder removes a match that is inside
+rule wins against a generic rule. spacefinder removes a match that is inside
 another match, because the larger total already contains it. The total
 therefore never counts the same bytes two times.
 
@@ -287,7 +290,7 @@ move the item back yourself.
 --version               show the version and stop
 ```
 
-spacefinder always skips `/net` and `/home`, because these autofs paths stop if
+spacefinder always skips `/net` and `/home`, because these autofs paths block if
 a mount is stale. It also skips `/dev` and `/System/Volumes/Data`. The last path
 is important. It is a firmlink to `/`, so a scan of both paths counts the same
 files two times.
