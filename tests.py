@@ -565,6 +565,31 @@ class TestRulesSafety(unittest.TestCase):
             self.assertTrue(r.paths or r.find_names,
                             f"{r.id} can never match anything")
 
+    def test_ipsw_rule_finds_finder_download(self):
+        # Finder saves firmware one level down, in "iPad Software Updates"
+        # or "iPhone Software Updates". A bare ~/Library/iTunes/* matches that
+        # folder instead, and evaluate() then drops the file as nested in it.
+        rule = next(r for r in rules_mod.load_rules() if r.id == "ipsw")
+        rule.min_size_mb = 0
+        home = tempfile.mkdtemp()
+        old_home = os.environ["HOME"]
+        try:
+            os.environ["HOME"] = home
+            ipsw = os.path.join(home, "Library", "iTunes",
+                                "iPad Software Updates", "iPad_27.0_Restore.ipsw")
+            os.makedirs(os.path.dirname(ipsw))
+            with open(ipsw, "wb") as f:
+                f.write(b"\0" * 8192)
+
+            class _Res:
+                total_alloc = {}
+
+            found = [f.path for f in rules_mod.evaluate([rule], _Res())]
+            self.assertEqual(found, [ipsw])
+        finally:
+            os.environ["HOME"] = old_home
+            shutil.rmtree(home)
+
 
 if __name__ == "__main__":
     if sys.platform != "darwin":

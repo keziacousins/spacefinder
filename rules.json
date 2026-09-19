@@ -730,7 +730,8 @@
       "category": "media",
       "why": "Device firmware, ~7 GB each, re-downloadable from Apple.",
       "paths": [
-        "~/Library/iTunes/*",
+        "~/Library/iTunes/*.ipsw",
+        "~/Library/iTunes/*/*.ipsw",
         "~/Library/Caches/com.apple.iTunes/*",
         "~/Downloads/*"
       ],
